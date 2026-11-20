@@ -1,0 +1,36 @@
+{
+  "name": "cantorfi-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for CantorFi: AI agents read the isolated lending vaults on Base (rates, liquidity, limits), the deployed contracts, the open-source liquidation bot and the guides. Read-only, no key.",
+  "mcpName": "io.github.cantorfi/cantorfi-mcp",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "cantorfi-mcp": "src/bridge.mjs"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node src/bridge.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cantorfi/cantorfi-mcp.git"
+  },
+  "homepage": "https://www.cantorfi.xyz",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "defi",
+    "lending",
+    "isolated-lending",
+    "base",
+    "liquidation",
+    "cantorfi"
+  ]
+}
