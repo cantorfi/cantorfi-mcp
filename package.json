@@ -1,7 +1,7 @@
 {
   "name": "cantorfi-mcp",
-  "version": "0.1.0",
-  "description": "MCP server for CantorFi: AI agents read the isolated lending vaults on Base (rates, liquidity, limits), the deployed contracts, the open-source liquidation bot and the guides. Read-only, no key.",
+  "version": "0.2.0",
+  "description": "MCP server for CantorFi lending vaults on Base: bridge to the remote endpoint (rates, wallet positions, unsigned transactions, apps, guides)",
   "mcpName": "io.github.cantorfi/cantorfi-mcp",
   "type": "module",
   "license": "MIT",
