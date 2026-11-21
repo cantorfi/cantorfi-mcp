@@ -1,22 +1,25 @@
 {
   "name": "cantorfi-mcp",
-  "version": "0.2.0",
-  "description": "MCP server for CantorFi lending vaults on Base: bridge to the remote endpoint (rates, wallet positions, unsigned transactions, apps, guides)",
+  "version": "0.3.0",
+  "description": "The CantorFi agent: one agent with its own wallet for CantorFi and every application built on it (lending, x402 payments in USDC, ICARE predictions and tribunal), plus the MCP bridge to the CantorFi door.",
   "mcpName": "io.github.cantorfi/cantorfi-mcp",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
-    "cantorfi-mcp": "src/bridge.mjs"
+    "cantorfi-mcp": "src/bridge.mjs",
+    "cantorfi-agent": "src/agent/cli.mjs"
   },
   "files": [
     "src",
     "README.md"
   ],
   "scripts": {
-    "start": "node src/bridge.mjs"
+    "start": "node src/bridge.mjs",
+    "agent": "node src/agent/cli.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "repository": {
     "type": "git",
@@ -24,13 +27,21 @@
   },
   "homepage": "https://www.cantorfi.xyz",
   "keywords": [
+    "agent",
+    "ai-agents",
+    "base",
+    "cantorfi",
+    "defi",
+    "isolated-lending",
+    "lending",
+    "liquidation",
     "mcp",
     "model-context-protocol",
-    "defi",
-    "lending",
-    "isolated-lending",
-    "base",
-    "liquidation",
-    "cantorfi"
-  ]
+    "usdc",
+    "x402"
+  ],
+  "dependencies": {
+    "@x402/core": "2.19.0",
+    "ethers": "6.17.0"
+  }
 }

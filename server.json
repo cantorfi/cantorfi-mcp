@@ -1,14 +1,14 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.cantorfi/cantorfi-mcp",
-  "title": "CantorFi isolated lending vaults",
-  "description": "CantorFi lending vaults on Base: rates, wallet positions, unsigned transactions, apps, guides.",
+  "title": "CantorFi lending vaults and agent door",
+  "description": "CantorFi on Base: vaults, positions, unsigned transactions, x402 paid services, apps built on it.",
   "websiteUrl": "https://www.cantorfi.xyz",
   "repository": {
     "url": "https://github.com/cantorfi/cantorfi-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "remotes": [
     {
       "type": "streamable-http",

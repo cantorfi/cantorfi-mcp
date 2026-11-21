@@ -1,4 +1,4 @@
-# CantorFi MCP server
+# CantorFi agent and MCP server
 
 MCP server for [CantorFi](https://www.cantorfi.xyz), a lending protocol on Base made of isolated vaults: each vault lends one token against collateral in that same token, with borrow and supply rates derived from utilization. CantorFi also settles prediction markets and inspects B20 tokens.
 
@@ -6,7 +6,44 @@ With this server, Claude, ChatGPT, Gemini and any MCP client can read the live s
 
 **No key, no account. The server never signs and never sends anything.** It reads the chain and prepares unsigned transactions; supplying, borrowing, repaying, withdrawing and liquidating are always signed by the user's or the agent's own wallet.
 
-## Connect
+This repository holds two things that share one door, `https://www.cantorfi.xyz/api/mcp`:
+
+- the **MCP server** of CantorFi, for Claude, ChatGPT, Gemini and any MCP client;
+- the **CantorFi agent** (`cantorfi-agent`): one agent with its own wallet that works on CantorFi and on every application built on CantorFi. There is one agent, not one per application.
+
+## The agent
+
+```
+npx -y -p github:cantorfi/cantorfi-mcp cantorfi-agent help
+```
+
+The agent connects to CantorFi only. There it finds the applications registered on CantorFi, reads the vaults and its own position, signs the transactions CantorFi prepares, and pays x402 desks in USDC.
+
+| Command | What it does |
+| --- | --- |
+| `cantorfi-agent wallet` | Address and balances. The wallet is created on this machine at first use; its key never leaves it. |
+| `cantorfi-agent discover` | Applications built on CantorFi with their own door, vaults, paid services. |
+| `cantorfi-agent position` | What the wallet has supplied and owes in each vault. |
+| `cantorfi-agent supply\|borrow\|repay\|withdraw <vault> <amount>` | CantorFi prepares the transactions, the wallet signs and sends them. |
+| `cantorfi-agent services` | Paid services (x402) and their prices. |
+| `cantorfi-agent pay <service id> '<json>'` | Pays a CantorFi service in USDC with x402: no gas, no approval, no account. |
+| `cantorfi-agent app <name> tools` / `call <tool>` | Reads the door of any application registered on CantorFi. |
+| `cantorfi-agent icare matches` / `bet` / `positions` / `sell` | ICARE predictions: stake paid from the ICARE Portfolio or with x402. |
+| `cantorfi-agent icare auto run\|once\|status` | Autonomous loop: decides with your strategy, stakes within your limits, sells at your profit target, logs every action. |
+| `cantorfi-agent icare tribunal list\|once\|run` | ICARE tribunal: 1 USDC ticket per case paid with x402, sealed proofs read, answer submitted. |
+
+How it stays safe:
+
+- One wallet, kept in `~/.cantorfi-agent/state.json` (mode 600) or given by `CANTORFI_AGENT_PRIVATE_KEY`. Nothing is ever sent but signatures.
+- It signs a vault transaction only when it goes to a vault or a token of the CantorFi deployment manifest, on its own chain, from its own address.
+- It pays an x402 desk only when the price fits the ceiling, the announced resource is the one it asked for, and the signing domain is the token's own on chain.
+- It stakes on an ICARE match only while the match contract still accepts stakes, checked on chain before anything is signed or paid.
+
+What is specific to an application lives in one module of this repository (`src/apps`). A new application registered on CantorFi is listed by `discover` at once and reachable with `app`; it gets a module only if it needs its own signatures.
+
+The public deployment runs on Base Sepolia with test USDC (https://faucet.circle.com). Network, contracts, payment token and prices are read from the door, so the same agent follows CantorFi to Base mainnet.
+
+## Connect the MCP server
 
 Remote server (Streamable HTTP, no authentication):
 
@@ -40,6 +77,7 @@ https://www.cantorfi.xyz/api/mcp
 | `cantorfi_apps` | Applications registered in the CantorFi integrator registry, read from the chain, with the endpoint where an agent reaches each of them. One connection finds them all. |
 | `cantorfi_position` | What one wallet has supplied and owes in each vault: supply, debt with interest, what it can still borrow, what it can withdraw, health factor. |
 | `cantorfi_prepare` | Unsigned transactions for one vault action (`supply`, `borrow`, `repay`, `withdraw`) and one amount, to be signed and sent in order by the wallet. |
+| `cantorfi_paid_services` | Services paid per call in USDC with x402: resource, price, input, how to pay. |
 | `search` | Search vaults and guides (isolated lending, liquidations, prediction market settlement, B20 tokens, ERC-4626). |
 | `fetch` | Full record of a vault or full text of a guide, by id from `search`. |
 
@@ -49,6 +87,7 @@ https://www.cantorfi.xyz/api/mcp
 - "How much USDC can still be borrowed from the CantorFi USDC vault?"
 - "Give me the CantorFi contract addresses on Base Sepolia."
 - "How do I run a liquidation bot on CantorFi without risking a key?"
+- "What can an agent pay for on CantorFi, and how much?"
 - "Which applications are built on CantorFi, and where does an agent reach them?"
 - "What does my wallet 0x… owe on CantorFi?"
 - "Prepare the transactions to supply 25 USDC to the CantorFi USDC vault from my wallet 0x…."
