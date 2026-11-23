@@ -17,7 +17,7 @@ export async function rpc(url, method, params) {
   return reply.result
 }
 export async function hello(url) {
-  return rpc(url, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cantorfi-agent', version: '0.3.0' } })
+  return rpc(url, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cantorfi-agent', version: '0.4.0' } })
 }
 export async function tools(url) {
   return (await rpc(url, 'tools/list')).tools

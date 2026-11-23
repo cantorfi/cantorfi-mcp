@@ -30,6 +30,11 @@ ICARE (live match predictions, an application built on CantorFi):
   cantorfi-agent icare tribunal list                 open tribunal cases
   cantorfi-agent icare tribunal once|run --games <id,id> --budget <usdc>   judge cases (1 USDC ticket per case, x402)
 
+Sjothr (company raises in USDC, an application built on CantorFi):
+  cantorfi-agent sjothr campaigns | rules            public raises, and who pays which fee
+  cantorfi-agent sjothr invest <campaignId> <usdc> [--max <usdc>]
+                                                     Sjothr prepares the transactions from the contract quote, the wallet signs them
+
 Wallet key: ${KEY_KEPT_IN} (never sent). Door: ${DOOR}. State: ${DIR}`
 
 const out = (value) => console.log(typeof value === 'string' ? value : JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? item.toString() : item, 2))
@@ -115,6 +120,21 @@ async function tribunal(module, args) {
   return { processed: receipts }
 }
 
+async function sjothr(sub, args) {
+  const app = await application('sjothr')
+  const module = await import('../apps/sjothr.mjs')
+  switch (sub) {
+    case 'campaigns': return module.campaigns(app)
+    case 'rules': return module.rules(app)
+    case 'invest': {
+      const [campaignId, amount] = args
+      if (!/^0x[0-9a-fA-F]{64}$/.test(campaignId || '') || !/^\d+(\.\d+)?$/.test(amount || '')) throw new AgentError('Usage: cantorfi-agent sjothr invest <campaignId> <usdc> [--max <usdc>]')
+      return module.invest(app, campaignId, amount, flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
+    }
+    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest <campaignId> <usdc> [--max <usdc>]')
+  }
+}
+
 const commands = {
   help: async () => HELP,
   wallet: async () => {
@@ -156,6 +176,7 @@ const commands = {
     throw new AgentError('Usage: cantorfi-agent app <name> tools | call <tool> [json]')
   },
   icare: (sub, ...args) => icare(sub, args),
+  sjothr: (sub, ...args) => sjothr(sub, args),
 }
 
 const [name = 'help', ...args] = process.argv.slice(2)

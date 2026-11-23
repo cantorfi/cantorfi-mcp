@@ -31,6 +31,7 @@ The agent connects to CantorFi only. There it finds the applications registered 
 | `cantorfi-agent icare matches` / `bet` / `positions` / `sell` | ICARE predictions: stake paid from the ICARE Portfolio or with x402. |
 | `cantorfi-agent icare auto run\|once\|status` | Autonomous loop: decides with your strategy, stakes within your limits, sells at your profit target, logs every action. |
 | `cantorfi-agent icare tribunal list\|once\|run` | ICARE tribunal: 1 USDC ticket per case paid with x402, sealed proofs read, answer submitted. |
+| `cantorfi-agent sjothr campaigns` / `rules` / `invest <campaignId> <usdc>` | Sjothr company raises: the raise is quoted by its contract, the wallet signs the allowance and the purchase; the 10% fee is paid by the backer on top. |
 
 How it stays safe:
 
@@ -38,6 +39,7 @@ How it stays safe:
 - It signs a vault transaction only when it goes to a vault or a token of the CantorFi deployment manifest, on its own chain, from its own address.
 - It pays an x402 desk only when the price fits the ceiling, the announced resource is the one it asked for, and the signing domain is the token's own on chain.
 - It stakes on an ICARE match only while the match contract still accepts stakes, checked on chain before anything is signed or paid.
+- It invests in a Sjothr raise only through an allowance in the USDC of the CantorFi manifest to the contract registered for Sjothr in the CantorFi registry, within your ceiling (`--max`), followed by the purchase on that same contract.
 
 What is specific to an application lives in one module of this repository (`src/apps`). A new application registered on CantorFi is listed by `discover` at once and reachable with `app`; it gets a module only if it needs its own signatures.
 

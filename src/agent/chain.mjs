@@ -28,15 +28,17 @@ async function retry(action, attempts = 6) {
 }
 
 let nextNonce = 0
-/** Signs and sends, in order, the transactions a door prepared for this wallet; returns the confirmed hashes. */
-export async function signAndSend(prepared, log = () => {}) {
+/** Signs and sends, in order, the transactions a door prepared for this wallet; returns the confirmed hashes.
+ *  `also`: addresses an application module has checked itself (the contract registered for it on CantorFi). */
+export async function signAndSend(prepared, log = () => {}, also = []) {
   const { provider, wallet, allowed } = await context()
   const { chainId } = await provider.getNetwork()
   if (BigInt(prepared.chainId) !== chainId) throw new AgentError(`Prepared for chain ${prepared.chainId}, the wallet is on chain ${chainId}: nothing was signed.`)
   const hashes = []
   for (const transaction of prepared.transactions) {
     if (transaction.from !== wallet.address) throw new AgentError('Prepared for another wallet: nothing was signed.')
-    if (!allowed.has(String(transaction.to).toLowerCase())) throw new AgentError(`${transaction.to} is not a vault or a token of the CantorFi manifest: nothing was signed.`)
+    const target = String(transaction.to).toLowerCase()
+    if (!allowed.has(target) && !also.some((address) => String(address).toLowerCase() === target)) throw new AgentError(`${transaction.to} is not a vault or a token of the CantorFi manifest: nothing was signed.`)
     const request = { to: transaction.to, data: transaction.data, value: BigInt(transaction.value) }
     const nonce = Math.max(nextNonce, await retry(() => provider.getTransactionCount(wallet.address, 'pending')))
     // A vault accrues interest once per second: the gas limit keeps a margin over the estimate.
