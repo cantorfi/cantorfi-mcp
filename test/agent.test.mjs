@@ -43,3 +43,21 @@ test('the door client lists and calls the tools of a door, and reports its refus
     await assert.rejects(tool(url, 'cantorfi_vault', { vault: 'DOGE' }), (error) => error instanceof AgentError && /No CantorFi vault/.test(error.message))
   } finally { server.close() }
 })
+
+test('an ICARE player token trade is signed only when the action is exactly the trade asked', async () => {
+  const { checkTokenAction } = await import('../src/apps/icare.mjs')
+  const { ethers } = await import('ethers')
+  const trade = new ethers.Interface(['function tradePlayerToken(address token,bool selling,uint256 amount,uint256 minOut,uint256 deadline)'])
+  const ACCOUNT = '0xb1567002FbCBE3584b9634De6Af3b23dD8a36F2E', FUNDS = '0x4adf4a76e8971659e67ffcb47e9cb62356a9ebff', TOKEN = '0xf58183464070a466728391cec343fc33e19eb896'
+  const action = (overrides = {}, call = [TOKEN, false, 200_000n, 1n, 1900000000n]) => ({ account: ACCOUNT, target: FUNDS, value: '200000', relayFee: '0', nonce: '3', deadline: '1900000000', data: trade.encodeFunctionData('tradePlayerToken', call), ...overrides })
+  const rules = { account: ACCOUNT, funds: FUNDS, token: TOKEN, side: 'buy', amount: '0.2' }
+  assert.doesNotThrow(() => checkTokenAction(action(), rules))
+  const refused = (value, pattern, overrides = {}) => assert.throws(() => checkTokenAction(value, { ...rules, ...overrides }), (error) => pattern.test(error.message))
+  refused(action({ relayFee: '1' }), /relay fee/)
+  refused(action({ value: '900000' }), /another USDC amount/)
+  refused(action({ target: '0x000000000000000000000000000000000000dEaD' }), /not for this wallet/)
+  refused(action({}, ['0x000000000000000000000000000000000000dEaD', false, 200_000n, 1n, 1900000000n]), /differs from the one asked/)
+  refused(action({}, [TOKEN, true, 200_000n, 1n, 1900000000n]), /differs from the one asked/)
+  refused(action({}, [TOKEN, false, 200_000n, 0n, 1900000000n]), /differs from the one asked/)
+  refused(action({ data: '0x12345678' }), /not a player token trade/)
+})

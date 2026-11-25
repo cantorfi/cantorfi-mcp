@@ -43,3 +43,8 @@ test('a credit risk, Market or backer action is signed only towards the Sjothr c
   refused({ transactions: [{ to: USDC, data: token.encodeFunctionData('approve', [OTHER, 1n]), value: '0x0' }] }, /spender that is not/)
   refused({ transactions: [{ to: USDC, data: token.encodeFunctionData('approve', [SJOTHR, 7_000_000n]), value: '0x0' }] }, /above the ceiling/)
 })
+
+test('the ceiling covers the whole Sjothr action: one allowance at most', () => {
+  const allow = (amount) => ({ to: USDC, data: token.encodeFunctionData('approve', [SJOTHR, amount]), value: '0x0' })
+  assert.throws(() => checkSjothrAction({ transactions: [allow(4_000_000n), allow(4_000_000n)] }, rules), (error) => error instanceof AgentError && /one USDC allowance at most/.test(error.message))
+})

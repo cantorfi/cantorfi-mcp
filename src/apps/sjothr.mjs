@@ -42,10 +42,12 @@ export async function invest(app, campaignId, amount, max, log = () => {}) {
 
 const PREPARE_TOOLS = new Set(['sjothr_risk_prepare', 'sjothr_market_prepare', 'sjothr_backer_prepare'])
 
-/** Refuses anything but transactions to the Sjothr contract registered on CantorFi, or USDC allowances to it within maxAtomic. */
+/** Refuses anything but transactions to the Sjothr contract registered on CantorFi, and at most one USDC allowance to it,
+ *  within maxAtomic for the whole action. */
 export function checkSjothrAction(prepared, { usdc, target, maxAtomic }) {
   const steps = prepared?.transactions || []
   if (!steps.length) throw new AgentError('Nothing was prepared: nothing was signed.')
+  let allowances = 0, total = 0n
   for (const step of steps) {
     if (BigInt(step.value || 0) !== 0n) throw new AgentError('A Sjothr action never sends ETH: nothing was signed.')
     if (same(step.to, target)) continue
@@ -53,8 +55,11 @@ export function checkSjothrAction(prepared, { usdc, target, maxAtomic }) {
     let spender, amount
     try { [spender, amount] = TOKEN.decodeFunctionData('approve', step.data) } catch { throw new AgentError('A USDC transaction that is not an allowance: nothing was signed.') }
     if (!same(spender, target)) throw new AgentError('The allowance names a spender that is not the Sjothr contract: nothing was signed.')
-    if (amount > maxAtomic) throw new AgentError(`The allowance (${ethers.formatUnits(amount, 6)} USDC) is above the ceiling (${ethers.formatUnits(maxAtomic, 6)} USDC): nothing was signed. Raise it with --max.`)
+    allowances += 1
+    total += amount
   }
+  if (allowances > 1) throw new AgentError('A Sjothr action asks for one USDC allowance at most: nothing was signed.')
+  if (total > maxAtomic) throw new AgentError(`The allowance (${ethers.formatUnits(total, 6)} USDC) is above the ceiling (${ethers.formatUnits(maxAtomic, 6)} USDC): nothing was signed. Raise it with --max.`)
 }
 
 /** One prepared Sjothr action (credit risk, Market, backer), checked then signed by the agent's wallet. */

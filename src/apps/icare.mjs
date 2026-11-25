@@ -235,11 +235,14 @@ export async function tradeToken(door, side, token, amount, slippage) {
   const cfg = await config()
   const prepared = await toolCall(door, 'icare_token_prepare', { action: side, wallet: wallet.address, token, amount, ...(slippage ? { slippage: Number(slippage) } : {}) })
   const action = prepared.portfolioAction
-  if (String(action.account).toLowerCase() !== wallet.address.toLowerCase() || String(action.target).toLowerCase() !== String(cfg.funds).toLowerCase()) {
-    throw new IcareError('The prepared action is not for this wallet on the ICARE Portfolio: nothing was signed.')
-  }
-  if (prepared.relay !== `${API}/api/funds/execute-signed`) throw new IcareError('The relay is not the ICARE relay: nothing was signed.')
+  // A token given by address is checked against the action; a symbol is resolved by the ICARE door.
+  checkTokenAction(action, { account: wallet.address, funds: cfg.funds, token: /^0x[0-9a-fA-F]{40}$/.test(token) ? token : prepared.token?.token, side, amount })
+  // Nonce and deadline read on chain: an old or replayed action, or one valid for too long, is never signed.
   const funds = new ethers.Contract(cfg.funds, FUNDS_ABI, provider)
+  const [nonce, block] = await Promise.all([funds.executionNonce(wallet.address), provider.getBlock('latest')])
+  if (BigInt(action.nonce) !== nonce) throw new IcareError('The prepared action does not use the next nonce of this wallet: nothing was signed.')
+  if (BigInt(action.deadline) < BigInt(block.timestamp) || BigInt(action.deadline) > BigInt(block.timestamp) + 3600n) throw new IcareError('The prepared action expires too late or has already expired: nothing was signed.')
+  if (prepared.relay !== `${API}/api/funds/execute-signed`) throw new IcareError('The relay is not the ICARE relay: nothing was signed.')
   const digest = await funds.actionDigest(action)
   if (digest !== prepared.digest) throw new IcareError('The digest does not match the action read on chain: nothing was signed.')
   const signature = await wallet.signMessage(ethers.getBytes(digest))
@@ -251,4 +254,24 @@ export async function tradeToken(door, side, token, amount, slippage) {
 async function toolCall(door, name, args) {
   const { tool } = await import('../agent/door.mjs')
   return tool(door, name, args)
+}
+
+const TOKEN_TRADE = new ethers.Interface(['function tradePlayerToken(address token,bool selling,uint256 amount,uint256 minOut,uint256 deadline)'])
+
+/** What the agent accepts to sign for a player token trade: its own Portfolio account, the Portfolio contract as target, no
+ *  relay fee, USDC taken only for a buy and exactly the amount asked, and a tradePlayerToken call on the asked token, side
+ *  and amount with a positive minimum received. */
+export function checkTokenAction(action, { account, funds, token, side, amount }) {
+  const same = (left, right) => String(left).toLowerCase() === String(right).toLowerCase()
+  const selling = side === 'sell'
+  const asked = ethers.parseUnits(String(amount), selling ? 18 : 6)
+  if (!same(action.account, account) || !same(action.target, funds)) throw new IcareError('The prepared action is not for this wallet on the ICARE Portfolio: nothing was signed.')
+  if (BigInt(action.relayFee) !== 0n) throw new IcareError('The prepared action asks for a relay fee: nothing was signed.')
+  if (BigInt(action.value) !== (selling ? 0n : asked)) throw new IcareError('The prepared action takes another USDC amount than the one asked: nothing was signed.')
+  let call
+  try { call = TOKEN_TRADE.decodeFunctionData('tradePlayerToken', action.data) } catch { throw new IcareError('The prepared action is not a player token trade: nothing was signed.') }
+  const [tradedToken, isSelling, tradedAmount, minOut, deadline] = call
+  if (!token || !same(tradedToken, token) || isSelling !== selling || tradedAmount !== asked || minOut <= 0n || deadline !== BigInt(action.deadline)) {
+    throw new IcareError('The prepared trade differs from the one asked (token, side, amount or minimum): nothing was signed.')
+  }
 }
