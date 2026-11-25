@@ -11,8 +11,12 @@ export function context() {
     const provider = new ethers.JsonRpcProvider(process.env.CANTORFI_RPC_URL || contracts.publicRpc, undefined, { batchMaxCount: 1, cacheTimeout: -1 })
     const { chainId } = await provider.getNetwork()
     if (Number(chainId) !== Number(contracts.chainId)) throw new AgentError(`The RPC is on chain ${chainId}, CantorFi runs on chain ${contracts.chainId}.`)
-    // The agent only signs transactions to the vaults and tokens the door declares in its deployment manifest.
-    const allowed = new Set(contracts.vaults.flatMap((vault) => [vault.vault.toLowerCase(), vault.tokenAddress.toLowerCase()]))
+    // The agent only signs transactions to the addresses the door declares in its deployment manifest: vaults, their
+    // tokens, receipt tokens and staking contracts, the manifest tokens and the swap router.
+    const allowed = new Set([
+      ...contracts.vaults.flatMap((vault) => [vault.vault, vault.tokenAddress, vault.receiptToken, vault.staking]),
+      ...Object.values(contracts.tokens || {}), contracts.swapRouter,
+    ].filter(Boolean).map((address) => String(address).toLowerCase()))
     return { contracts, provider, wallet: await agentWallet(provider), allowed }
   })().catch((error) => { contextPromise = null; throw error })
 }
@@ -31,7 +35,7 @@ let nextNonce = 0
 /** Signs and sends, in order, the transactions a door prepared for this wallet; returns the confirmed hashes.
  *  `also`: addresses an application module has checked itself (the contract registered for it on CantorFi). */
 export async function signAndSend(prepared, log = () => {}, also = []) {
-  const { provider, wallet, allowed } = await context()
+  const { provider, wallet, allowed, contracts } = await context()
   const { chainId } = await provider.getNetwork()
   if (BigInt(prepared.chainId) !== chainId) throw new AgentError(`Prepared for chain ${prepared.chainId}, the wallet is on chain ${chainId}: nothing was signed.`)
   const hashes = []
@@ -39,7 +43,9 @@ export async function signAndSend(prepared, log = () => {}, also = []) {
     if (transaction.from !== wallet.address) throw new AgentError('Prepared for another wallet: nothing was signed.')
     const target = String(transaction.to).toLowerCase()
     if (!allowed.has(target) && !also.some((address) => String(address).toLowerCase() === target)) throw new AgentError(`${transaction.to} is not a vault or a token of the CantorFi manifest: nothing was signed.`)
-    const request = { to: transaction.to, data: transaction.data, value: BigInt(transaction.value) }
+    // ETH leaves the wallet only for a swap sold in ETH, sent to the swap router of the manifest.
+    if (BigInt(transaction.value || 0) !== 0n && !(contracts.swapRouter && String(contracts.swapRouter).toLowerCase() === target)) throw new AgentError(`"${transaction.description}" sends ETH to an address that is not the CantorFi swap router: nothing was signed.`)
+    const request = { to: transaction.to, data: transaction.data, value: BigInt(transaction.value || 0) }
     const nonce = Math.max(nextNonce, await retry(() => provider.getTransactionCount(wallet.address, 'pending')))
     // A vault accrues interest once per second: the gas limit keeps a margin over the estimate.
     const estimate = await retry(() => provider.estimateGas({ ...request, from: wallet.address }))

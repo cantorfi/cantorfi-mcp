@@ -1,5 +1,7 @@
 # CantorFi agent and MCP server
 
+[![cantorfi/cantorfi-mcp MCP server](https://glama.ai/mcp/servers/cantorfi/cantorfi-mcp/badges/score.svg)](https://glama.ai/mcp/servers/cantorfi/cantorfi-mcp) [![CantorFi MCP connector](https://glama.ai/mcp/connectors/io.github.cantorfi/cantorfi-mcp/badges/score.svg)](https://glama.ai/mcp/connectors/io.github.cantorfi/cantorfi-mcp)
+
 MCP server for [CantorFi](https://www.cantorfi.xyz), a lending protocol on Base made of isolated vaults: each vault lends one token against collateral in that same token, with borrow and supply rates derived from utilization. CantorFi also settles prediction markets and inspects B20 tokens.
 
 With this server, Claude, ChatGPT, Gemini and any MCP client can read the live state of the vaults, a wallet's position, the deployed contracts, the applications built on CantorFi, the commands of the open-source liquidation bot and the CantorFi guides. An agent that has its own wallet can also ask for the unsigned transactions of a vault action and sign them itself.
@@ -25,13 +27,19 @@ The agent connects to CantorFi only. There it finds the applications registered 
 | `cantorfi-agent discover` | Applications built on CantorFi with their own door, vaults, paid services. |
 | `cantorfi-agent position` | What the wallet has supplied and owes in each vault. |
 | `cantorfi-agent supply\|borrow\|repay\|withdraw <vault> <amount>` | CantorFi prepares the transactions, the wallet signs and sends them. |
+| `cantorfi-agent stake <vault> <cvt> [--days n]` / `unstake <vault>` / `claim-rewards <vault>` | Staking of the vault receipt token (CVT), lock of 1 to 365 days. |
+| `cantorfi-agent swap <from> <to> <amount> [--slippage p]` | Swap between USDC, WETH and ETH through the CantorFi router, with a minimum received. |
 | `cantorfi-agent services` | Paid services (x402) and their prices. |
 | `cantorfi-agent pay <service id> '<json>'` | Pays a CantorFi service in USDC with x402: no gas, no approval, no account. |
 | `cantorfi-agent app <name> tools` / `call <tool>` | Reads the door of any application registered on CantorFi. |
 | `cantorfi-agent icare matches` / `bet` / `positions` / `sell` | ICARE predictions: stake paid from the ICARE Portfolio or with x402. |
 | `cantorfi-agent icare auto run\|once\|status` | Autonomous loop: decides with your strategy, stakes within your limits, sells at your profit target, logs every action. |
+| `cantorfi-agent icare tokens` / `token buy <symbol> <usdc>` / `token sell <symbol> <tokens>` | ICARE player tokens, bought and sold from the ICARE Portfolio: the wallet signs the action, ICARE relays it (no gas). |
 | `cantorfi-agent icare tribunal list\|once\|run` | ICARE tribunal: 1 USDC ticket per case paid with x402, sealed proofs read, answer submitted. |
 | `cantorfi-agent sjothr campaigns` / `rules` / `invest <campaignId> <usdc>` | Sjothr company raises: the raise is quoted by its contract, the wallet signs the allowance and the purchase; the 10% fee is paid by the backer on top. |
+| `cantorfi-agent sjothr portfolios` / `portfolio <poolId>` / `positions` | Sjothr credit risk: verified loan-book portfolios, their tranches and offers, the wallet's guarantor positions. |
+| `cantorfi-agent sjothr market [campaignId]` / `backer <campaignId>` | Startup token resale before listing; a raise seen by the wallet (rounds, kept tokens, votes). |
+| `cantorfi-agent sjothr do <tool> '<json>' [--max <usdc>]` | One credit risk (`sjothr_risk_prepare`: cover, withdraw_offer, collect, sell, unlist, buy, release), Market (`sjothr_market_prepare`) or backer (`sjothr_backer_prepare`: vote_round, vote_release, refund, redeem) action, checked then signed: only the Sjothr contract registered on CantorFi and USDC allowances to it within the ceiling. |
 
 How it stays safe:
 

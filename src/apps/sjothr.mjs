@@ -39,3 +39,31 @@ export async function invest(app, campaignId, amount, max, log = () => {}) {
   return { done: `invested ${prepared.amount} USDC in ${prepared.campaign?.name || campaignId}`, paid: `${ethers.formatUnits(totalAtomic, 6)} USDC from the wallet`,
     fee: prepared.fee, transactions, page: prepared.campaign?.page, condition: prepared.condition }
 }
+
+const PREPARE_TOOLS = new Set(['sjothr_risk_prepare', 'sjothr_market_prepare', 'sjothr_backer_prepare'])
+
+/** Refuses anything but transactions to the Sjothr contract registered on CantorFi, or USDC allowances to it within maxAtomic. */
+export function checkSjothrAction(prepared, { usdc, target, maxAtomic }) {
+  const steps = prepared?.transactions || []
+  if (!steps.length) throw new AgentError('Nothing was prepared: nothing was signed.')
+  for (const step of steps) {
+    if (BigInt(step.value || 0) !== 0n) throw new AgentError('A Sjothr action never sends ETH: nothing was signed.')
+    if (same(step.to, target)) continue
+    if (!same(step.to, usdc)) throw new AgentError(`${step.to} is neither the Sjothr contract registered on CantorFi nor the USDC of the manifest: nothing was signed.`)
+    let spender, amount
+    try { [spender, amount] = TOKEN.decodeFunctionData('approve', step.data) } catch { throw new AgentError('A USDC transaction that is not an allowance: nothing was signed.') }
+    if (!same(spender, target)) throw new AgentError('The allowance names a spender that is not the Sjothr contract: nothing was signed.')
+    if (amount > maxAtomic) throw new AgentError(`The allowance (${ethers.formatUnits(amount, 6)} USDC) is above the ceiling (${ethers.formatUnits(maxAtomic, 6)} USDC): nothing was signed. Raise it with --max.`)
+  }
+}
+
+/** One prepared Sjothr action (credit risk, Market, backer), checked then signed by the agent's wallet. */
+export async function act(app, toolName, input, max, log = () => {}) {
+  if (!PREPARE_TOOLS.has(toolName)) throw new AgentError(`"${toolName}" is not a Sjothr action; use one of: ${[...PREPARE_TOOLS].join(', ')}.`)
+  const { wallet, contracts } = await context()
+  if (!app.feeRecipient) throw new AgentError(`${app.name || app.appId} has no contract registered on CantorFi.`)
+  const prepared = await tool(app.agentEndpoint, toolName, { ...input, wallet: wallet.address })
+  checkSjothrAction(prepared, { usdc: contracts.tokens.USDC, target: app.feeRecipient, maxAtomic: ethers.parseUnits(max || '100', 6) })
+  const transactions = await signAndSend(prepared, log, [app.feeRecipient])
+  return { done: `${toolName.replace('sjothr_', '').replace('_prepare', '')} ${prepared.action}`, transactions, condition: prepared.condition }
+}

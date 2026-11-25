@@ -16,6 +16,10 @@ const HELP = `cantorfi-agent: one agent with its own wallet for CantorFi and eve
   cantorfi-agent position                            what the wallet has supplied and owes in each vault
   cantorfi-agent supply|borrow|repay|withdraw <vault> <amount>
                                                      CantorFi prepares the transactions, the wallet signs and sends them
+  cantorfi-agent stake <vault> <cvt> [--days <1-365>] | unstake <vault> | claim-rewards <vault>
+                                                     staking of the vault receipt token (CVT)
+  cantorfi-agent swap <USDC|WETH|ETH> <USDC|WETH|ETH> <amount> [--slippage <percent>]
+                                                     swap through the CantorFi router, with a minimum received
   cantorfi-agent services                            paid services (x402) and their prices
   cantorfi-agent pay <service id> '<json input>' [--max <usdc>]
                                                      pays a CantorFi service in USDC with x402: no gas, no account
@@ -27,6 +31,9 @@ ICARE (live match predictions, an application built on CantorFi):
   cantorfi-agent icare bet <matchId> <win|lose> <stake>   stake paid from the ICARE Portfolio or with x402
   cantorfi-agent icare positions | sell <matchId> <win|lose> [units] | season | activate <code>
   cantorfi-agent icare auto run|once|status|help     autonomous loop within the owner's limits
+  cantorfi-agent icare tokens                        player tokens and their price
+  cantorfi-agent icare token buy <symbol> <usdc> | sell <symbol> <tokens> [--slippage <percent>]
+                                                     from the ICARE Portfolio, signed by the wallet, relayed by ICARE
   cantorfi-agent icare tribunal list                 open tribunal cases
   cantorfi-agent icare tribunal once|run --games <id,id> --budget <usdc>   judge cases (1 USDC ticket per case, x402)
 
@@ -34,6 +41,11 @@ Sjothr (company raises in USDC, an application built on CantorFi):
   cantorfi-agent sjothr campaigns | rules            public raises, and who pays which fee
   cantorfi-agent sjothr invest <campaignId> <usdc> [--max <usdc>]
                                                      Sjothr prepares the transactions from the contract quote, the wallet signs them
+  cantorfi-agent sjothr portfolios | portfolio <poolId> | positions      credit risk: verified portfolios, a wallet's positions
+  cantorfi-agent sjothr market [campaignId] | backer <campaignId>        startup token resale, a raise seen by the wallet
+  cantorfi-agent sjothr do <sjothr_risk_prepare|sjothr_market_prepare|sjothr_backer_prepare> '<json>' [--max <usdc>]
+                                                     one credit risk, Market or backer action, checked then signed
+                                                     (example: do sjothr_risk_prepare '{"action":"cover","poolId":"0x…","tranche":0,"premium":"11.5","amount":"100"}')
 
 Wallet key: ${KEY_KEPT_IN} (never sent). Door: ${DOOR}. State: ${DIR}`
 
@@ -60,6 +72,24 @@ async function lend(action, vault, amount) {
   return { done: `${action} ${amount} ${prepared.vault.token}`, transactions, condition: prepared.condition }
 }
 
+async function staking(action, vault, args) {
+  if (!vault || (action === 'stake' && !args[0])) throw new AgentError(`Usage: cantorfi-agent ${action === 'claim_rewards' ? 'claim-rewards' : action} <vault>${action === 'stake' ? ' <cvt> [--days <1-365>]' : ''}`)
+  const { wallet } = await context()
+  const days = flag(args, 'days')
+  const prepared = await tool(DOOR, 'cantorfi_prepare', { action, vault, wallet: wallet.address, ...(action === 'stake' ? { amount: args[0], ...(days ? { lockDays: Number(days) } : {}) } : {}) })
+  const transactions = await signAndSend(prepared, (event) => console.error(`  ${event.step} → ${event.transaction}`))
+  return { done: `${action} on the ${prepared.vault.token} vault`, transactions, condition: prepared.condition }
+}
+
+async function swap(from, to, amount, args) {
+  if (!from || !to || !amount) throw new AgentError('Usage: cantorfi-agent swap <USDC|WETH|ETH> <USDC|WETH|ETH> <amount> [--slippage <percent>]')
+  const { wallet } = await context()
+  const slippage = flag(args, 'slippage')
+  const prepared = await tool(DOOR, 'cantorfi_prepare', { action: 'swap', from: from.toUpperCase(), to: to.toUpperCase(), amount, wallet: wallet.address, ...(slippage ? { slippage: Number(slippage) } : {}) })
+  const transactions = await signAndSend(prepared, (event) => console.error(`  ${event.step} → ${event.transaction}`))
+  return { done: `swapped ${amount} ${from.toUpperCase()}`, quote: prepared.quote, minimum: prepared.minimum, transactions }
+}
+
 async function icare(sub, args) {
   const app = (await applications()).find((entry) => entry.appId === ICARE_APP_ID)
   if (!app) throw new AgentError('ICARE is not registered on this CantorFi deployment.')
@@ -81,7 +111,13 @@ async function icare(sub, args) {
     case 'activate': return module.activate(args[0])
     case 'auto': return (await import('../apps/icare-auto.mjs')).main(args.length ? args : ['help'])
     case 'tribunal': return tribunal(module, args)
-    default: throw new AgentError('ICARE commands: matches, bet, positions, sell, season, activate, auto, tribunal. See: cantorfi-agent help')
+    case 'tokens': return tool(app.agentEndpoint, 'icare_player_tokens')
+    case 'token': {
+      const [side, token, amount] = args
+      if (!['buy', 'sell'].includes(side) || !token || !/^\d+(\.\d+)?$/.test(amount || '')) throw new AgentError('Usage: cantorfi-agent icare token buy <symbol> <usdc> | sell <symbol> <tokens> [--slippage <percent>]')
+      return module.tradeToken(app.agentEndpoint, side, token, amount, flag(args, 'slippage'))
+    }
+    default: throw new AgentError('ICARE commands: matches, bet, positions, sell, season, activate, auto, tribunal, tokens, token. See: cantorfi-agent help')
   }
 }
 
@@ -131,7 +167,13 @@ async function sjothr(sub, args) {
       if (!/^0x[0-9a-fA-F]{64}$/.test(campaignId || '') || !/^\d+(\.\d+)?$/.test(amount || '')) throw new AgentError('Usage: cantorfi-agent sjothr invest <campaignId> <usdc> [--max <usdc>]')
       return module.invest(app, campaignId, amount, flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
     }
-    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest <campaignId> <usdc> [--max <usdc>]')
+    case 'portfolios': return tool(app.agentEndpoint, 'sjothr_risk_portfolios')
+    case 'portfolio': return tool(app.agentEndpoint, 'sjothr_risk_portfolio', { poolId: args[0] })
+    case 'positions': return tool(app.agentEndpoint, 'sjothr_risk_positions', { wallet: (await context()).wallet.address })
+    case 'market': return tool(app.agentEndpoint, 'sjothr_market', args[0] ? { campaignId: args[0] } : {})
+    case 'backer': return tool(app.agentEndpoint, 'sjothr_backer', { campaignId: args[0], wallet: (await context()).wallet.address })
+    case 'do': return module.act(app, args[0], json(args[1], 'The action'), flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
+    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest | portfolios | portfolio | positions | market | backer | do. See: cantorfi-agent help')
   }
 }
 
@@ -158,6 +200,10 @@ const commands = {
   borrow: (vault, amount) => lend('borrow', vault, amount),
   repay: (vault, amount) => lend('repay', vault, amount),
   withdraw: (vault, amount) => lend('withdraw', vault, amount),
+  stake: (vault, ...args) => staking('stake', vault, args),
+  unstake: (vault) => staking('unstake', vault, []),
+  'claim-rewards': (vault) => staking('claim_rewards', vault, []),
+  swap: (from, to, amount, ...args) => swap(from, to, amount, args),
   services: async () => tool(DOOR, 'cantorfi_paid_services'),
   pay: async (id, input, ...rest) => {
     const paid = await tool(DOOR, 'cantorfi_paid_services')

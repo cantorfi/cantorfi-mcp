@@ -227,3 +227,28 @@ export async function season() {
   if (status !== 200) throw new IcareError('Season 0 leaderboard unavailable.')
   return body?.data || body
 }
+
+/** Buys (USDC) or sells (tokens) a player token from the ICARE Portfolio: the ICARE door prepares the Portfolio action, the
+ *  agent checks it is its own account and the Portfolio contract announced by ICARE, signs its digest and posts it. */
+export async function tradeToken(door, side, token, amount, slippage) {
+  await ensureWallet()
+  const cfg = await config()
+  const prepared = await toolCall(door, 'icare_token_prepare', { action: side, wallet: wallet.address, token, amount, ...(slippage ? { slippage: Number(slippage) } : {}) })
+  const action = prepared.portfolioAction
+  if (String(action.account).toLowerCase() !== wallet.address.toLowerCase() || String(action.target).toLowerCase() !== String(cfg.funds).toLowerCase()) {
+    throw new IcareError('The prepared action is not for this wallet on the ICARE Portfolio: nothing was signed.')
+  }
+  if (prepared.relay !== `${API}/api/funds/execute-signed`) throw new IcareError('The relay is not the ICARE relay: nothing was signed.')
+  const funds = new ethers.Contract(cfg.funds, FUNDS_ABI, provider)
+  const digest = await funds.actionDigest(action)
+  if (digest !== prepared.digest) throw new IcareError('The digest does not match the action read on chain: nothing was signed.')
+  const signature = await wallet.signMessage(ethers.getBytes(digest))
+  const relayed = await json(prepared.relay, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, signature }) }, 90_000)
+  if (relayed.status !== 200) throw new IcareError(`Trade refused (${relayed.body?.error || relayed.status}).`)
+  return { done: `${side} ${prepared.token.symbol}`, ...(side === 'buy' ? { spent: `${prepared.spendingUsdc} USDC`, minimum: `${prepared.minimumTokens} ${prepared.token.symbol}` } : { sold: `${prepared.selling} ${prepared.token.symbol}`, minimum: `${prepared.minimumUsdc} USDC` }), transaction: relayed.body?.txHash }
+}
+
+async function toolCall(door, name, args) {
+  const { tool } = await import('../agent/door.mjs')
+  return tool(door, name, args)
+}
