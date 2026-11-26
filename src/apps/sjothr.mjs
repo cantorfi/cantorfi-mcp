@@ -3,7 +3,7 @@
 // before signing: an allowance in the USDC of the CantorFi manifest, to the contract registered for Sjothr in the
 // CantorFi registry, within the owner's ceiling, then the purchase on that same contract.
 import { ethers } from 'ethers'
-import { AgentError } from '../agent/state.mjs'
+import { AgentError, readState, saveState } from '../agent/state.mjs'
 import { tool } from '../agent/door.mjs'
 import { context, signAndSend } from '../agent/chain.mjs'
 
@@ -72,3 +72,23 @@ export async function act(app, toolName, input, max, log = () => {}) {
   const transactions = await signAndSend(prepared, log, [app.feeRecipient])
   return { done: `${toolName.replace('sjothr_', '').replace('_prepare', '')} ${prepared.action}`, transactions, condition: prepared.condition }
 }
+
+export const tribunal = (app) => tool(app.agentEndpoint, 'sjothr_tribunal')
+
+/** Juror of Sjothr's tribunal: a hidden vote on a contested claim. The salt is drawn here and kept in the agent's state
+ *  (never sent before the reveal): without it the vote can't be opened and the ticket is lost. */
+export async function vote(app, poolId, uphold, max, log = () => {}) {
+  const salt = ethers.hexlify(ethers.randomBytes(32))
+  const result = await act(app, 'sjothr_risk_prepare', { action: 'vote', poolId, uphold, salt }, max || '5', log)
+  const state = await readState()
+  await saveState({ ...state, sjothrVotes: { ...(state.sjothrVotes || {}), [poolId.toLowerCase()]: { uphold, salt } } })
+  return { ...result, keep: 'The salt of this vote is kept in the agent state; open it with: cantorfi-agent sjothr reveal ' + poolId }
+}
+
+/** Opens the hidden vote left by this agent on a contested claim. */
+export async function reveal(app, poolId, log = () => {}) {
+  const saved = (await readState()).sjothrVotes?.[poolId.toLowerCase()]
+  if (!saved) throw new AgentError(`This agent left no hidden vote on ${poolId}.`)
+  return act(app, 'sjothr_risk_prepare', { action: 'reveal', poolId, uphold: saved.uphold, salt: saved.salt }, '0', log)
+}
+

@@ -1,6 +1,6 @@
 {
   "name": "cantorfi-mcp",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "The CantorFi agent: one agent with its own wallet for CantorFi and every application built on it (lending, x402 payments in USDC, ICARE predictions and tribunal, Sjothr raises), plus the MCP bridge to the CantorFi door.",
   "mcpName": "io.github.cantorfi/cantorfi-mcp",
   "type": "module",
