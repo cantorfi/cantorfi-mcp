@@ -40,18 +40,46 @@ export async function invest(app, campaignId, amount, max, log = () => {}) {
     fee: prepared.fee, transactions, page: prepared.campaign?.page, condition: prepared.condition }
 }
 
-const PREPARE_TOOLS = new Set(['sjothr_risk_prepare', 'sjothr_market_prepare', 'sjothr_backer_prepare'])
+const PREPARE_TOOLS = new Set(['sjothr_risk_prepare', 'sjothr_market_prepare', 'sjothr_backer_prepare', 'sjothr_founder_prepare'])
+const ROUNDS = new ethers.Interface([
+  'function campaignIdByCreator(address creator) view returns (bytes32)',
+  'function roundsOf(bytes32 campaignId) view returns ((address vault, uint256 saleAllocation, uint256 fundingGoal, uint256 pricePerToken, uint64 deadline, bool listing, uint8 outcome, uint256 sold)[])',
+])
+
+/** Vaults of the rounds of the raise this wallet created, read on the Sjothr contract itself (never from the door). */
+export async function ownRoundVaults(provider, sjothr, wallet) {
+  const contract = new ethers.Contract(sjothr, ROUNDS, provider)
+  const campaignId = await contract.campaignIdByCreator(wallet)
+  if (/^0x0{64}$/.test(campaignId)) return []
+  return (await contract.roundsOf(campaignId)).map((round) => round.vault)
+}
 
 /** Refuses anything but transactions to the Sjothr contract registered on CantorFi, and at most one USDC allowance to it,
  *  within maxAtomic for the whole action. */
-export function checkSjothrAction(prepared, { usdc, target, maxAtomic }) {
+const VAULT = new ethers.Interface([
+  'function requestRelease(string evidenceUri, bytes32 evidenceHash) returns (uint256)',
+  'function finalizeProposal(uint256 proposalId)',
+  'function withdrawCreatorFunds(address recipient, uint256 amount)',
+])
+
+/** A call to a round vault of the wallet's own raise: only the founder's request, the vote's record and a withdrawal
+ *  paid to the wallet itself. */
+function checkVaultCall(step, wallet) {
+  let call
+  try { call = VAULT.parseTransaction({ data: step.data }) } catch { call = null }
+  if (!call) throw new AgentError('A round vault call that is not a release request, a vote record or a withdrawal: nothing was signed.')
+  if (call.name === 'withdrawCreatorFunds' && !same(call.args.recipient, wallet)) throw new AgentError('The withdrawal pays an address that is not this wallet: nothing was signed.')
+}
+
+export function checkSjothrAction(prepared, { usdc, target, maxAtomic, vaults = [], wallet }) {
   const steps = prepared?.transactions || []
   if (!steps.length) throw new AgentError('Nothing was prepared: nothing was signed.')
   let allowances = 0, total = 0n
   for (const step of steps) {
     if (BigInt(step.value || 0) !== 0n) throw new AgentError('A Sjothr action never sends ETH: nothing was signed.')
     if (same(step.to, target)) continue
-    if (!same(step.to, usdc)) throw new AgentError(`${step.to} is neither the Sjothr contract registered on CantorFi nor the USDC of the manifest: nothing was signed.`)
+    if (vaults.some((vault) => same(step.to, vault)) && !same(step.to, usdc)) { checkVaultCall(step, wallet ?? prepared.wallet); continue }
+    if (!same(step.to, usdc)) throw new AgentError(`${step.to} is neither the Sjothr contract registered on CantorFi, nor a round vault of this wallet's own raise, nor the USDC of the manifest: nothing was signed.`)
     let spender, amount
     try { [spender, amount] = TOKEN.decodeFunctionData('approve', step.data) } catch { throw new AgentError('A USDC transaction that is not an allowance: nothing was signed.') }
     if (!same(spender, target)) throw new AgentError('The allowance names a spender that is not the Sjothr contract: nothing was signed.')
@@ -62,14 +90,16 @@ export function checkSjothrAction(prepared, { usdc, target, maxAtomic }) {
   if (total > maxAtomic) throw new AgentError(`The allowance (${ethers.formatUnits(total, 6)} USDC) is above the ceiling (${ethers.formatUnits(maxAtomic, 6)} USDC): nothing was signed. Raise it with --max.`)
 }
 
-/** One prepared Sjothr action (credit risk, Market, backer), checked then signed by the agent's wallet. */
+/** One prepared Sjothr action (credit risk, Market, backer, founder), checked then signed by the agent's wallet. A founder
+ *  action may also go to the vaults of the rounds of the wallet's own raise, read on the Sjothr contract. */
 export async function act(app, toolName, input, max, log = () => {}) {
   if (!PREPARE_TOOLS.has(toolName)) throw new AgentError(`"${toolName}" is not a Sjothr action; use one of: ${[...PREPARE_TOOLS].join(', ')}.`)
-  const { wallet, contracts } = await context()
+  const { wallet, contracts, provider } = await context()
   if (!app.feeRecipient) throw new AgentError(`${app.name || app.appId} has no contract registered on CantorFi.`)
   const prepared = await tool(app.agentEndpoint, toolName, { ...input, wallet: wallet.address })
-  checkSjothrAction(prepared, { usdc: contracts.tokens.USDC, target: app.feeRecipient, maxAtomic: ethers.parseUnits(max || '100', 6) })
-  const transactions = await signAndSend(prepared, log, [app.feeRecipient])
+  const vaults = toolName === 'sjothr_founder_prepare' ? await ownRoundVaults(provider, app.feeRecipient, wallet.address) : []
+  checkSjothrAction(prepared, { usdc: contracts.tokens.USDC, target: app.feeRecipient, maxAtomic: ethers.parseUnits(max || '100', 6), vaults, wallet: wallet.address })
+  const transactions = await signAndSend(prepared, log, [app.feeRecipient, ...vaults])
   return { done: `${toolName.replace('sjothr_', '').replace('_prepare', '')} ${prepared.action}`, transactions, condition: prepared.condition }
 }
 

@@ -48,3 +48,17 @@ test('the ceiling covers the whole Sjothr action: one allowance at most', () => 
   const allow = (amount) => ({ to: USDC, data: token.encodeFunctionData('approve', [SJOTHR, amount]), value: '0x0' })
   assert.throws(() => checkSjothrAction({ transactions: [allow(4_000_000n), allow(4_000_000n)] }, rules), (error) => error instanceof AgentError && /one USDC allowance at most/.test(error.message))
 })
+
+test('a founder action may go to a vault of its own raise (read on the Sjothr contract), never to another address', () => {
+  const VAULT = '0x4444444444444444444444444444444444444444'
+  const vault = new ethers.Interface(['function withdrawCreatorFunds(address recipient, uint256 amount)', 'function finalizeProposal(uint256)'])
+  const own = { ...rules, vaults: [VAULT], wallet: WALLET }
+  const toVault = (data, value = '0x0') => ({ transactions: [{ to: VAULT, data, value }] })
+  assert.doesNotThrow(() => checkSjothrAction(toVault(vault.encodeFunctionData('withdrawCreatorFunds', [WALLET, 5_000_000n])), own))
+  assert.doesNotThrow(() => checkSjothrAction(toVault(vault.encodeFunctionData('finalizeProposal', [3n])), own))
+  assert.throws(() => checkSjothrAction(toVault(vault.encodeFunctionData('finalizeProposal', [3n])), rules), (error) => error instanceof AgentError && /round vault of this wallet's own raise/.test(error.message))
+  // A withdrawal to another address, an unknown vault call, ETH attached.
+  assert.throws(() => checkSjothrAction(toVault(vault.encodeFunctionData('withdrawCreatorFunds', [OTHER, 5_000_000n])), own), /not this wallet/)
+  assert.throws(() => checkSjothrAction(toVault('0x12345678'), own), /nothing was signed/)
+  assert.throws(() => checkSjothrAction(toVault(vault.encodeFunctionData('finalizeProposal', [3n]), '0x1'), own), /ETH/)
+})

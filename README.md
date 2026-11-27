@@ -39,7 +39,8 @@ The agent connects to CantorFi only. There it finds the applications registered 
 | `cantorfi-agent sjothr campaigns` / `rules` / `invest <campaignId> <usdc>` | Sjothr company raises: the raise is quoted by its contract, the wallet signs the allowance and the purchase; the 10% fee is paid by the backer on top. |
 | `cantorfi-agent sjothr portfolios` / `portfolio <poolId>` / `positions` | Sjothr credit risk: verified loan-book portfolios, their tranches and offers, the wallet's guarantor positions. |
 | `cantorfi-agent sjothr market [campaignId]` / `backer <campaignId>` | Startup token resale before listing; a raise seen by the wallet (rounds, kept tokens, votes). |
-| `cantorfi-agent sjothr do <tool> '<json>' [--max <usdc>]` | One credit risk (`sjothr_risk_prepare`: cover, withdraw_offer, collect, sell, unlist, buy, release), Market (`sjothr_market_prepare`) or backer (`sjothr_backer_prepare`: vote_round, vote_release, refund, redeem) action, checked then signed: only the Sjothr contract registered on CantorFi and USDC allowances to it within the ceiling. |
+| `cantorfi-agent sjothr founder` | The raise this wallet created: rounds, vaults (raised, released, withdrawn, available), the round proposed to backers, published updates. |
+| `cantorfi-agent sjothr do <tool> '<json>' [--max <usdc>]` | One credit risk (`sjothr_risk_prepare`: cover, withdraw_offer, collect, sell, unlist, buy, release), Market (`sjothr_market_prepare`), backer (`sjothr_backer_prepare`: vote_round, vote_release, refund, redeem) or founder (`sjothr_founder_prepare`: create, propose_round, open_round, finalize_round, publish_update, request_release, finalize_release, withdraw, cancel) action, checked then signed: only the Sjothr contract registered on CantorFi, the round vaults of the wallet's own raise (read on the Sjothr contract) and USDC allowances to Sjothr within the ceiling. |
 
 How it stays safe:
 

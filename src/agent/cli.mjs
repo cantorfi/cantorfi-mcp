@@ -46,7 +46,8 @@ Sjothr (company raises in USDC, an application built on CantorFi):
   cantorfi-agent sjothr tribunal                     claims open to contest, disputes open to jurors, verified firms
   cantorfi-agent sjothr vote <poolId> confirm|reject [--max <usdc>]      hidden vote as a juror (ticket in USDC; salt kept here)
   cantorfi-agent sjothr reveal <poolId>              open the hidden vote once hidden votes are closed
-  cantorfi-agent sjothr do <sjothr_risk_prepare|sjothr_market_prepare|sjothr_backer_prepare> '<json>' [--max <usdc>]
+  cantorfi-agent sjothr founder                      the raise this wallet created: rounds, vaults, votes, updates
+  cantorfi-agent sjothr do <sjothr_risk_prepare|sjothr_market_prepare|sjothr_backer_prepare|sjothr_founder_prepare> '<json>' [--max <usdc>]
                                                      one action of any role, checked then signed: guarantor (cover, contest…),
                                                      credit company (publish, pay_premium, file_claim, file_report…), firm
                                                      (sign_engagement, attest, sign_claim, sign_report…), anyone (pay_claim, resolve)
@@ -177,6 +178,7 @@ async function sjothr(sub, args) {
     case 'positions': return tool(app.agentEndpoint, 'sjothr_risk_positions', { wallet: (await context()).wallet.address })
     case 'market': return tool(app.agentEndpoint, 'sjothr_market', args[0] ? { campaignId: args[0] } : {})
     case 'backer': return tool(app.agentEndpoint, 'sjothr_backer', { campaignId: args[0], wallet: (await context()).wallet.address })
+    case 'founder': return tool(app.agentEndpoint, 'sjothr_founder', { wallet: (await context()).wallet.address })
     case 'do': return module.act(app, args[0], json(args[1], 'The action'), flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
     case 'tribunal': return module.tribunal(app)
     case 'vote': {
@@ -188,7 +190,7 @@ async function sjothr(sub, args) {
       if (!/^0x[0-9a-fA-F]{64}$/.test(args[0] || '')) throw new AgentError('Usage: cantorfi-agent sjothr reveal <poolId>')
       return module.reveal(app, args[0], (event) => console.error(`  ${event.step} → ${event.transaction}`))
     }
-    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest | portfolios | portfolio | positions | market | backer | tribunal | vote | reveal | do. See: cantorfi-agent help')
+    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest | portfolios | portfolio | positions | market | backer | founder | tribunal | vote | reveal | do. See: cantorfi-agent help')
   }
 }
 
