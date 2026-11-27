@@ -2,6 +2,7 @@
 // cantorfi-agent: one agent, one wallet, one door. It connects to CantorFi only, finds there the applications built on
 // CantorFi, reads vaults and its own position, signs the transactions CantorFi prepares, and pays x402 desks in USDC.
 // What is specific to an application lives in one module of this repository (src/apps), never in a second agent.
+import { readFile } from 'node:fs/promises'
 import { ethers } from 'ethers'
 import { AgentError, DIR, DOOR, KEY_KEPT_IN } from './state.mjs'
 import { hello, tool, tools } from './door.mjs'
@@ -44,9 +45,15 @@ Sjothr (company raises in USDC, an application built on CantorFi):
   cantorfi-agent sjothr portfolios | portfolio <poolId> | positions      credit risk: verified portfolios, a wallet's positions
   cantorfi-agent sjothr market [campaignId] | backer <campaignId>        startup token resale, a raise seen by the wallet
   cantorfi-agent sjothr tribunal                     claims open to contest, disputes open to jurors, verified firms
-  cantorfi-agent sjothr vote <poolId> confirm|reject [--max <usdc>]      hidden vote as a juror (ticket in USDC; salt kept here)
-  cantorfi-agent sjothr reveal <poolId>              open the hidden vote once hidden votes are closed
-  cantorfi-agent sjothr founder                      the raise this wallet created: rounds, vaults, votes, updates
+  cantorfi-agent sjothr code [poolId]                Sjothr's code, the law of the tribunal (checked on chain for a portfolio)
+  cantorfi-agent sjothr vote <poolId> <established findings|none> --reasons <text|@file> [--max <usdc>]
+                                                     hidden findings as a juror: default,eligible,loss,goodFaith (ticket in USDC)
+  cantorfi-agent sjothr reveal <poolId>              open the findings and reasons once hidden votes are closed
+  cantorfi-agent sjothr founder                      the raise this wallet created: rounds, vaults, votes, updates, writer
+  cantorfi-agent sjothr writer <wallet|none>         the founder invites its AI agent's wallet to publish its updates
+  cantorfi-agent sjothr progress <update.json> [campaignId]
+                                                     publish an update {title,text,links,files:[{name,url}]}, files fingerprinted;
+                                                     campaignId when this wallet is the invited writer
   cantorfi-agent sjothr do <sjothr_risk_prepare|sjothr_market_prepare|sjothr_backer_prepare|sjothr_founder_prepare> '<json>' [--max <usdc>]
                                                      one action of any role, checked then signed: guarantor (cover, contest…),
                                                      credit company (publish, pay_premium, file_claim, file_report…), firm
@@ -181,16 +188,28 @@ async function sjothr(sub, args) {
     case 'founder': return tool(app.agentEndpoint, 'sjothr_founder', { wallet: (await context()).wallet.address })
     case 'do': return module.act(app, args[0], json(args[1], 'The action'), flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
     case 'tribunal': return module.tribunal(app)
+    case 'code': return module.code(app, args[0])
     case 'vote': {
-      const [poolId, choice] = args
-      if (!/^0x[0-9a-fA-F]{64}$/.test(poolId || '') || !['confirm', 'reject'].includes(choice)) throw new AgentError('Usage: cantorfi-agent sjothr vote <poolId> confirm|reject [--max <usdc>]')
-      return module.vote(app, poolId, choice === 'confirm', flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
+      const [poolId, established] = args
+      const reasonsArg = flag(args, 'reasons')
+      if (!/^0x[0-9a-fA-F]{64}$/.test(poolId || '') || !established || !reasonsArg) throw new AgentError('Usage: cantorfi-agent sjothr vote <poolId> <established findings|none> --reasons <text|@file> [--max <usdc>]. Read: cantorfi-agent sjothr code <poolId>')
+      const reasons = reasonsArg.startsWith('@') ? await readFile(reasonsArg.slice(1), 'utf8') : reasonsArg
+      return module.vote(app, poolId, module.findingsFrom(established), reasons.trim(), flag(args, 'max'), (event) => console.error(`  ${event.step} → ${event.transaction}`))
     }
     case 'reveal': {
       if (!/^0x[0-9a-fA-F]{64}$/.test(args[0] || '')) throw new AgentError('Usage: cantorfi-agent sjothr reveal <poolId>')
       return module.reveal(app, args[0], (event) => console.error(`  ${event.step} → ${event.transaction}`))
     }
-    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest | portfolios | portfolio | positions | market | backer | founder | tribunal | vote | reveal | do. See: cantorfi-agent help')
+    case 'writer': {
+      if (!/^(0x[0-9a-fA-F]{40}|none)$/.test(args[0] || '')) throw new AgentError('Usage: cantorfi-agent sjothr writer <wallet|none>')
+      return module.setWriter(app, args[0], (event) => console.error(`  ${event.step} → ${event.transaction}`))
+    }
+    case 'progress': {
+      const [file, campaignId] = args
+      if (!file || (campaignId && !/^0x[0-9a-fA-F]{64}$/.test(campaignId))) throw new AgentError('Usage: cantorfi-agent sjothr progress <update.json> [campaignId]')
+      return module.progress(app, json(await readFile(file, 'utf8'), 'The update'), campaignId, (event) => console.error(`  ${event.step} → ${event.transaction}`))
+    }
+    default: throw new AgentError('Usage: cantorfi-agent sjothr campaigns | rules | invest | portfolios | portfolio | positions | market | backer | founder | tribunal | code | vote | reveal | writer | progress | do. See: cantorfi-agent help')
   }
 }
 

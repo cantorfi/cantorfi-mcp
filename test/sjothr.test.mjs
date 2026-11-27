@@ -62,3 +62,21 @@ test('a founder action may go to a vault of its own raise (read on the Sjothr co
   assert.throws(() => checkSjothrAction(toVault('0x12345678'), own), /nothing was signed/)
   assert.throws(() => checkSjothrAction(toVault(vault.encodeFunctionData('finalizeProposal', [3n]), '0x1'), own), /ETH/)
 })
+
+test("a juror's findings are named from Sjothr's code; nothing else is accepted", async () => {
+  const { findingsFrom } = await import('../src/apps/sjothr.mjs')
+  assert.deepEqual(findingsFrom('default,eligible,loss'), { default: true, eligible: true, loss: true, goodFaith: false })
+  assert.deepEqual(findingsFrom('none'), { default: false, eligible: false, loss: false, goodFaith: false })
+  for (const wrong of ['', 'confirm', 'default,guilty']) assert.throws(() => findingsFrom(wrong), (error) => error instanceof AgentError && /established ones/.test(error.message))
+})
+
+test("the founder's agent fingerprints each proof file from its exact bytes before publishing it", async () => {
+  const { fingerprintFile } = await import('../src/apps/sjothr.mjs')
+  const bytes = new TextEncoder().encode('pilot video bytes')
+  const fetcher = async () => new Response(bytes, { headers: { 'content-type': 'video/mp4' } })
+  const file = await fingerprintFile({ url: 'https://startup.example/week-48/pilot.mp4' }, fetcher)
+  assert.deepEqual(file, { name: 'pilot.mp4', kind: 'video', url: 'https://startup.example/week-48/pilot.mp4', fingerprint: ethers.keccak256(bytes) })
+  await assert.rejects(fingerprintFile({ url: 'http://startup.example/a.pdf' }, fetcher), /public https/)
+  await assert.rejects(fingerprintFile({ url: 'https://startup.example/a.pdf' }, async () => new Response('', { status: 404 })), /answered 404/)
+  await assert.rejects(fingerprintFile({ url: 'https://startup.example/notes.txt' }, async () => new Response('x', { headers: { 'content-type': 'text/plain' } })), /neither a photo/)
+})
